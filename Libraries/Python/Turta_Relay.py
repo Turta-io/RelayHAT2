@@ -2,8 +2,9 @@
 # Distributed under the terms of the MIT license.
 
 # Python Library for Serial Relay Controller.
-# Version 1.0.0
+# Version 1.0.1
 # Released: July 16th, 2019
+# Last Updated: September 7th, 2019
 
 # Visit https://docs.turta.io for documentation.
 
@@ -28,6 +29,13 @@ class RelayController:
     MCP23008_INTCAP  = 0x08
     MCP23008_GPIO    = 0x09
     MCP23008_OLAT    = 0x0A
+    LEDS_ON_MASK     = 0x80
+    PIN_ON_MASK      = 0x01
+    RELAYS_MASK      = 0x1F
+
+    #Variables
+    leds_on = True
+    pres_st = False
 
     #I2C Config
     bus = SMBus(1)
@@ -57,20 +65,43 @@ class RelayController:
 
     #Initialization
 
-    def __init__(self, addr = 0x20):
+    def __init__(self, addr = 0x20, leds_state = True, preserve_state = False):
         """Initiates the MCP23008 I/O Expander to control relays.
 
         Parameters:
-        addr (byte): Device address, default is 0x20"""
+        addr (byte): Device address, default is 0x20
+        leds_state (bool): Indicator LEDs state, default is True
+        preserve_state (bool): Save the relay state even if the application exits, default is False"""
 
-        #Device address check
+        #Save the parameters to global variables.
+        self.pres_st = preserve_state
+        self.leds_on = leds_state
+
+        #Device address check.
         if not 0x20 <= addr <= 0x27:
             raise TypeError("Device address must be between 0x20 and 0x27.")
         self.I2C_ADDRESS = addr
-        self._set_initial_settings()
+
+        if preserve_state:
+            if self._check_init() is False:
+                self._set_initial_settings()
+
+        else:
+            #Initialize the port expander.
+            self._set_initial_settings()
+        
         self.is_initialized = True
 
     #Configuration
+
+    def _check_init(self):
+        """Checks if the port expander is already initialized.
+        
+        Returns:
+        bool: Init state (True of False)"""
+
+        io_dir = self._read_register_1ubyte(self.MCP23008_IODIR)
+        return True if io_dir == 0x00 else False
 
     def _set_initial_settings(self):
         """Writes the initial settings to the IO expander."""
@@ -101,6 +132,23 @@ class RelayController:
 
         #Set output latch register to logic-low.
         self._write_register(self.MCP23008_OLAT, 0x00)
+        return
+
+    def set_leds(self, st):
+        """Controls the indication LEDs.
+
+        Parameters:
+        st (bool): Indicator LEDs state (True or False)"""
+
+        self.leds_on = st
+
+        port = self._read_register_1ubyte(self.MCP23008_OLAT)
+        if st:
+            port |= (self.PIN_ON_MASK << 7)
+        else:
+            port &= ~(self.PIN_ON_MASK << 7)
+        self._write_register(self.MCP23008_OLAT, port)
+        return
 
     #Relay Write Methods
 
@@ -113,9 +161,9 @@ class RelayController:
 
         port = self._read_register_1ubyte(self.MCP23008_OLAT)
         if st:
-            port |= (0x01 << ch-1)
+            port |= (self.PIN_ON_MASK << ch-1)
         else:
-            port &= ~(0x01 << ch-1)
+            port &= ~(self.PIN_ON_MASK << ch-1)
         self._write_register(self.MCP23008_OLAT, port)
         return
 
@@ -125,7 +173,8 @@ class RelayController:
         Parameters:
         st (byte): Relay states (0b00000 to 0b11111)"""
 
-        self._write_register(self.MCP23008_OLAT, st)
+        st = st & self.RELAYS_MASK
+        self._write_register(self.MCP23008_OLAT, st | self.LEDS_ON_MASK if self.leds_on else st)
         return
 
     def write_all(self, st):
@@ -134,7 +183,8 @@ class RelayController:
         Parameters:
         st (bool): Relay states (True or False)"""
 
-        self._write_register(self.MCP23008_OLAT, 0x1F if st else 0x00)
+        state = 0x1F if st else 0x00
+        self._write_register(self.MCP23008_OLAT, state | self.LEDS_ON_MASK if self.leds_on else state)
         return
 
     def toggle(self, ch):
@@ -144,8 +194,8 @@ class RelayController:
         ch (byte): Relay channel (1 to 5)"""
 
         port = self._read_register_1ubyte(self.MCP23008_OLAT)
-        port ^= 0x01 << ch-1
-        self._write_register(self.MCP23008_OLAT, port)
+        port ^= self.PIN_ON_MASK << ch-1
+        self._write_register(self.MCP23008_OLAT, port | self.LEDS_ON_MASK if self.leds_on else port)
         return
 
     def toggle_all(self):
@@ -153,7 +203,7 @@ class RelayController:
 
         port = self._read_register_1ubyte(self.MCP23008_OLAT)
         port ^= 0x1F
-        self._write_register(self.MCP23008_OLAT, port)
+        self._write_register(self.MCP23008_OLAT, port | self.LEDS_ON_MASK if self.leds_on else port)
         return
 
     #Relay Read Methods
@@ -168,7 +218,7 @@ class RelayController:
         bool: Relay state (True of False)"""
 
         port = self._read_register_1ubyte(self.MCP23008_OLAT)
-        return True if (port >> ch-1) & 0x01 == 0x01 else False
+        return True if (port >> ch-1) & self.PIN_ON_MASK == self.PIN_ON_MASK else False
 
     def read_all(self):
         """Reads all the relay states.
@@ -177,7 +227,7 @@ class RelayController:
         byte: Relay states (0b00000 to 0b11111)"""
 
         port = self._read_register_1ubyte(self.MCP23008_OLAT)
-        return port & 0x1F
+        return port & self.RELAYS_MASK
 
     #Disposal
 
@@ -185,7 +235,8 @@ class RelayController:
         """Releases the resources."""
         try:
             if self.is_initialized:
-                self.write_all(False)
+                if not self.pres_st:
+                    self.write_all(False)
                 del self.is_initialized
         except:
             pass

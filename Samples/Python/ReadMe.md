@@ -3,7 +3,9 @@ This directory includes Python samples for Turta Relay HAT 2.
 
 ## Index
 * __Relay_Control.py:__ Demonstrates turning relays on and off.
+* __Relay_LED_Control.py:__ Demonstrates turning relay indicator LEDs on and off.
 * __Relay_Pattern.py:__ Demonstrates controlling all the relays with one command.
+* __Relay_Preserve_State.py:__ Demonstrates state preserve functionality of the Relay HAT.
 * __Relay_Toggle.py:__ Demonstrates toggling the relays.
 
 ## Running the Python Samples
