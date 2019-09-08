@@ -2,9 +2,9 @@
 # Distributed under the terms of the MIT license.
 
 # Python Library for Serial Relay Controller.
-# Version 1.0.1
+# Version 1.0.2
 # Released: July 16th, 2019
-# Last Updated: September 7th, 2019
+# Last Updated: September 8th, 2019
 
 # Visit https://docs.turta.io for documentation.
 
@@ -164,7 +164,7 @@ class RelayController:
             port |= (self.PIN_ON_MASK << ch-1)
         else:
             port &= ~(self.PIN_ON_MASK << ch-1)
-        self._write_register(self.MCP23008_OLAT, port)
+        self._write_register(self.MCP23008_OLAT, port | self.LEDS_ON_MASK if self.leds_on else port)
         return
 
     def write_once(self, st):
